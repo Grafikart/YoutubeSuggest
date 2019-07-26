@@ -9,6 +9,7 @@ import (
 
 type API struct {
 	service *youtube.Service
+	cache   Cache
 }
 
 type Subscriptions []Subscription
@@ -18,16 +19,20 @@ type Subscription struct {
 	Name string
 }
 
-func NewAPI(token string) (*API, error) {
+func NewAPI(token string, cache Cache) (*API, error) {
 	ctx := context.Background()
 	s, err := youtube.NewService(ctx, option.WithAPIKey(token))
 	if err != nil {
 		return nil, fmt.Errorf("cannot create youtube service %v", err)
 	}
-	return &API{s}, nil
+	return &API{s, cache}, nil
 }
 
 func (api *API) Subscriptions(channelID string) (subscriptions Subscriptions, err error) {
+	subscriptions = api.cache.Get(channelID)
+	if subscriptions != nil {
+		return subscriptions, nil
+	}
 	ctx := context.Background()
 	err = api.service.Subscriptions.
 		List("snippet").
@@ -36,6 +41,9 @@ func (api *API) Subscriptions(channelID string) (subscriptions Subscriptions, er
 		Pages(ctx, appendSubscription(&subscriptions))
 	if err != nil {
 		return nil, fmt.Errorf("can't retrieve subscriptions for %q, %v", channelID, err)
+	}
+	if err := api.cache.Set(channelID, subscriptions); err != nil {
+		return nil, fmt.Errorf("can't cache data, %v", err)
 	}
 	return subscriptions, nil
 }
